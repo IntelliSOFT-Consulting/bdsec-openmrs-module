@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectModuleManager">
+    <modules>
+      <module fileurl="file://$PROJECT_DIR$/api/odooconnector-api.iml" filepath="$PROJECT_DIR$/api/odooconnector-api.iml" />
+      <module fileurl="file://$PROJECT_DIR$/omod/odooconnector-omod.iml" filepath="$PROJECT_DIR$/omod/odooconnector-omod.iml" />
+    </modules>
+  </component>
+</project>
