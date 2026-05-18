@@ -25,6 +25,10 @@
 
     <context:component-scan base-package="org.openmrs.module.odooconnector" />
 
+    <!-- OdooBillingPaymentStatus is registered with Hibernate via hibernate.cfg.xml
+         (api/src/main/resources/hibernate.cfg.xml). OpenMRS module loading reads
+         that file automatically and merges the mapping into the session factory. -->
+
     <!-- Wraps OdooconnectorService methods in DB transactions and OpenMRS interceptors,
     which set audit info like dateCreated, changedBy, etc.-->
     <bean id="odooconnector.OdooconnectorService"
@@ -52,6 +56,35 @@
             <list>
                 <value>org.openmrs.module.odooconnector.api.OdooconnectorService</value>
                 <ref bean="odooconnector.OdooconnectorService" />
+            </list>
+        </property>
+    </bean>
+
+    <!-- Wraps OdooBillingPaymentStatusService in DB transactions -->
+    <bean id="odooconnector.OdooBillingPaymentStatusService"
+            class="org.springframework.transaction.interceptor.TransactionProxyFactoryBean">
+        <property name="transactionManager">
+            <ref bean="transactionManager" />
+        </property>
+        <property name="target">
+            <bean class="org.openmrs.module.odooconnector.api.impl.OdooBillingPaymentStatusServiceImpl">
+                <property name="dao" ref="odooconnector.OdooBillingPaymentStatusDao" />
+            </bean>
+        </property>
+        <property name="preInterceptors">
+            <ref bean="serviceInterceptors" />
+        </property>
+        <property name="transactionAttributeSource">
+            <ref bean="transactionAttributeSource" />
+        </property>
+    </bean>
+
+    <!-- Exposes OdooBillingPaymentStatusService via Context.getService(...) -->
+    <bean parent="serviceContext">
+        <property name="moduleService">
+            <list>
+                <value>org.openmrs.module.odooconnector.api.OdooBillingPaymentStatusService</value>
+                <ref bean="odooconnector.OdooBillingPaymentStatusService" />
             </list>
         </property>
     </bean>
