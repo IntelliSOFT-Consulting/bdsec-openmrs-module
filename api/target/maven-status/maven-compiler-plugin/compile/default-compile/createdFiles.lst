@@ -1,6 +1,13 @@
-org/openmrs/module/odooconnector/Item.class
+org/openmrs/module/odooconnector/api/dao/OdooBillingPaymentStatusDaoImpl.class
+org/openmrs/module/odooconnector/OdooBillingPaymentStatus.class
 org/openmrs/module/odooconnector/OdooconnectorConfig.class
+org/openmrs/module/odooconnector/api/dao/OdooBillingPaymentStatusDao.class
+org/openmrs/module/odooconnector/api/OdooBillingPaymentStatusService.class
 org/openmrs/module/odooconnector/api/dao/OdooconnectorDao.class
+org/openmrs/module/odooconnector/exception/PaymentRequiredException.class
+org/openmrs/module/odooconnector/Item.class
 org/openmrs/module/odooconnector/api/OdooconnectorService.class
+org/openmrs/module/odooconnector/api/impl/OdooBillingPaymentStatusServiceImpl.class
 org/openmrs/module/odooconnector/OdooconnectorActivator.class
 org/openmrs/module/odooconnector/api/impl/OdooconnectorServiceImpl.class
+org/openmrs/module/odooconnector/OdooBillingPaymentStatusDTO.class

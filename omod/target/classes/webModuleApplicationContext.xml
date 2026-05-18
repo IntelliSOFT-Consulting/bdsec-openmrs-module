@@ -21,4 +21,32 @@
   		    http://www.springframework.org/schema/util/spring-util-3.0.xsd">
 
 	<context:component-scan base-package="org.openmrs.module.odooconnector.web.controller" />
+	<context:component-scan base-package="org.openmrs.module.odooconnector.web" />
+
+    <!-- Payment gate interceptor — blocks unpaid clinical service requests -->
+    <bean id="odooconnector.billingPaymentGateInterceptor"
+          class="org.openmrs.module.odooconnector.web.BillingPaymentGateInterceptor"/>
+
+    <!--
+        MappedInterceptor is auto-detected by Spring MVC's handler mappings.
+        The patterns below cover the Bahmni/OpenMRS REST endpoints for services
+        that must be gate-checked before the request proceeds.
+
+        Global property odooconnector.billing.gateEnabled=false disables the gate.
+        Global property odooconnector.billing.emergencyBypassPatients=<comma-separated patientIds>
+        allows specific patients to bypass payment checks.
+    -->
+    <bean class="org.springframework.web.servlet.handler.MappedInterceptor">
+        <constructor-arg>
+            <list value-type="java.lang.String">
+                <value>/rest/*/encounter/**</value>
+                <value>/rest/*/bahmniencounter/**</value>
+                <value>/rest/*/order/**</value>
+                <value>/rest/*/drugorder/**</value>
+                <value>/rest/*/bedassignment/**</value>
+                <value>/rest/*/bedmanagement/**</value>
+            </list>
+        </constructor-arg>
+        <constructor-arg ref="odooconnector.billingPaymentGateInterceptor"/>
+    </bean>
 </beans>
