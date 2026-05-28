@@ -49,17 +49,78 @@
 	 /Required Privileges -->
 
 
-	<!-- Required Global Properties 
+	<!-- Required Global Properties -->
+
+	<!-- Odoo connection settings — shared by all Odoo integration services -->
 	<globalProperty>
-		<property>@MODULE_ID@.someProperty</property>
-		<defaultValue></defaultValue>
+		<property>odooconnector.odooUrl</property>
+		<defaultValue>https://bdsec.grace-erp-consultancy.com</defaultValue>
 		<description>
-			A description of the global property goes here.  The description
-			should explain enough for administrators to understand the purpose
-			and possible values for the global property.
+			Base URL of the Odoo server (no trailing slash). Used by all Odoo integration services.
+			Auth endpoint:  {odooUrl}/web/session/authenticate
+			Sales endpoint: {odooUrl}{odooconnector.consultation.odooPath}
 		</description>
 	</globalProperty>
-	/Required Global Properties -->
+	<globalProperty>
+		<property>odooconnector.odooDb</property>
+		<defaultValue>odoo</defaultValue>
+		<description>
+			Odoo database name sent in the JSON-RPC authentication payload.
+		</description>
+	</globalProperty>
+	<globalProperty>
+		<property>odooconnector.odooLogin</property>
+		<defaultValue>emrsync</defaultValue>
+		<description>
+			Odoo service-account login used for API authentication.
+		</description>
+	</globalProperty>
+	<globalProperty>
+		<property>odooconnector.odooPassword</property>
+		<defaultValue>Admin123</defaultValue>
+		<description>
+			Odoo service-account password. Change to a strong value in production.
+		</description>
+	</globalProperty>
+
+	<!-- Consultation-specific settings -->
+	<globalProperty>
+		<property>odooconnector.consultation.odooPath</property>
+		<defaultValue>/api/bdsec/sales</defaultValue>
+		<description>
+			Odoo API path for the consultation sale order endpoint.
+			Combined with odooconnector.odooUrl to form the full URL.
+			Full default: https://bdsec.grace-erp-consultancy.com/api/bdsec/sales
+		</description>
+	</globalProperty>
+	<globalProperty>
+		<property>odooconnector.consultation.shopId</property>
+		<defaultValue>1</defaultValue>
+		<description>
+			Odoo shop_id sent in every consultation sale order. Identifies which POS shop
+			the consultation is billed through. Change per deployment if multiple shops exist.
+		</description>
+	</globalProperty>
+
+	<!-- Billing gate settings -->
+	<globalProperty>
+		<property>odooconnector.billing.gateEnabled</property>
+		<defaultValue>true</defaultValue>
+		<description>
+			Set to false to disable the billing payment gate globally (e.g. during go-live testing).
+			When true, encounters and orders are blocked for patients with unpaid consultations.
+		</description>
+	</globalProperty>
+	<globalProperty>
+		<property>odooconnector.billing.emergencyBypassPatients</property>
+		<defaultValue></defaultValue>
+		<description>
+			Comma-separated patient identifiers (e.g. ABC200001,ABC200002) that bypass the billing gate.
+			Use for emergency patients who must be treated before payment is collected.
+		</description>
+	</globalProperty>
+
+	<!-- /Required Global Properties -->
 	
 	<!--
 	<dwr>
