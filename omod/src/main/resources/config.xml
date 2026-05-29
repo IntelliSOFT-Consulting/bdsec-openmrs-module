@@ -120,6 +120,24 @@
 		</description>
 	</globalProperty>
 
+	<!-- Inbound billing orders from Odoo (BillingOrderController) -->
+	<globalProperty>
+		<property>odooconnector.billing.inboundBearerToken</property>
+		<defaultValue>test-token-123</defaultValue>
+		<description>
+			Bearer token Odoo must send in the Authorization header when posting to
+			/odooconnector/billing/orders. Change this to a strong random value in production.
+		</description>
+	</globalProperty>
+	<globalProperty>
+		<property>odooconnector.billing.inboundApiKey</property>
+		<defaultValue></defaultValue>
+		<description>
+			Alternative API key accepted in the x-api-key header for systems that cannot
+			send a Bearer token. Leave blank to disable API-key auth.
+		</description>
+	</globalProperty>
+
 	<!-- /Required Global Properties -->
 	
 	<!--

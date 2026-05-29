@@ -68,4 +68,11 @@ public interface OdooBillingPaymentStatusService extends OpenmrsService {
      */
     @Transactional
     void voidPaymentRecord(Integer id, String reason, Integer voidedBy) throws APIException;
+
+    /**
+     * Returns the first non-voided record whose service_reference_id equals the given value,
+     * or null. Used for idempotency: the service_reference_id stores the Odoo sale_id.
+     */
+    @Transactional(readOnly = true)
+    OdooBillingPaymentStatus getFirstByServiceReferenceId(String serviceReferenceId) throws APIException;
 }

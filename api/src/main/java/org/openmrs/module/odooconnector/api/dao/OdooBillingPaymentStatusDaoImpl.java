@@ -83,4 +83,15 @@ public class OdooBillingPaymentStatusDaoImpl implements OdooBillingPaymentStatus
                 .addOrder(Order.asc("serviceType"))
                 .list();
     }
+
+    @Override
+    public OdooBillingPaymentStatus getFirstByServiceReferenceId(String serviceReferenceId) {
+        return (OdooBillingPaymentStatus) getSession()
+                .createCriteria(OdooBillingPaymentStatus.class)
+                .add(Restrictions.eq("serviceReferenceId", serviceReferenceId))
+                .add(Restrictions.eq("voided", (byte) 0))
+                .addOrder(Order.asc("id"))
+                .setMaxResults(1)
+                .uniqueResult();
+    }
 }

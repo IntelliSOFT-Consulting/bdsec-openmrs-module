@@ -37,4 +37,10 @@ public interface OdooBillingPaymentStatusDao {
      * Returns non-voided records with payment_status = 'PENDING' for the visit.
      */
     List<OdooBillingPaymentStatus> getPendingByVisit(Integer visitId);
+
+    /**
+     * Returns the first non-voided record whose service_reference_id matches the given value,
+     * or null. Used for idempotency checks keyed on Odoo sale_id.
+     */
+    OdooBillingPaymentStatus getFirstByServiceReferenceId(String serviceReferenceId);
 }

@@ -110,6 +110,11 @@ public class OdooBillingPaymentStatusServiceImpl
     }
 
     @Override
+    public OdooBillingPaymentStatus getFirstByServiceReferenceId(String serviceReferenceId) throws APIException {
+        return dao.getFirstByServiceReferenceId(serviceReferenceId);
+    }
+
+    @Override
     public void voidPaymentRecord(Integer id, String reason, Integer voidedBy) throws APIException {
         if (reason == null || reason.trim().isEmpty()) {
             throw new APIException("void reason is required");
