@@ -25,9 +25,11 @@ import java.util.UUID;
 
 /**
  * Hibernate entity mapping for the odoo_billing_payment_status table.
- * Each row represents a billing record pushed from Odoo for a specific
- * patient/visit/service combination and acts as the payment gate checked
- * before Bahmni allows clinical actions.
+ * Each row is an append-only history entry for a patient/visit/service payment
+ * status pushed from Odoo — rows are never updated in place, so a status
+ * transition (e.g. PENDING -&gt; PAID) always inserts a new row rather than
+ * overwriting the old one. The most recent non-voided row for a given
+ * (patientId, visitId, serviceType) is what the payment gate checks.
  */
 @Entity(name = "odooconnector.OdooBillingPaymentStatus")
 @Table(name = "odoo_billing_payment_status")
@@ -38,8 +40,9 @@ public class OdooBillingPaymentStatus extends BaseOpenmrsObject {
     @Column(name = "id")
     private Integer id;
 
-    @Column(name = "patient_id", nullable = false)
-    private Integer patientId;
+    /** Bahmni patient identifier string (e.g. "BDSEC200001") — never the internal numeric patient PK. */
+    @Column(name = "patient_id", nullable = false, length = 50)
+    private String patientId;
 
     @Column(name = "visit_id", nullable = false)
     private Integer visitId;
@@ -119,11 +122,11 @@ public class OdooBillingPaymentStatus extends BaseOpenmrsObject {
         this.id = id;
     }
 
-    public Integer getPatientId() {
+    public String getPatientId() {
         return patientId;
     }
 
-    public void setPatientId(Integer patientId) {
+    public void setPatientId(String patientId) {
         this.patientId = patientId;
     }
 

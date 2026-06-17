@@ -49,7 +49,7 @@ public class OdooBillingPaymentStatusDaoImpl implements OdooBillingPaymentStatus
     }
 
     @Override
-    public OdooBillingPaymentStatus getByPatientVisitService(Integer patientId, Integer visitId, String serviceType) {
+    public OdooBillingPaymentStatus getByPatientVisitService(String patientId, Integer visitId, String serviceType) {
         return (OdooBillingPaymentStatus) getSession()
                 .createCriteria(OdooBillingPaymentStatus.class)
                 .add(Restrictions.eq("patientId", patientId))
@@ -91,6 +91,18 @@ public class OdooBillingPaymentStatusDaoImpl implements OdooBillingPaymentStatus
                 .add(Restrictions.eq("serviceReferenceId", serviceReferenceId))
                 .add(Restrictions.eq("voided", (byte) 0))
                 .addOrder(Order.asc("id"))
+                .setMaxResults(1)
+                .uniqueResult();
+    }
+
+    @Override
+    public OdooBillingPaymentStatus getLatestByServiceReferenceIdAndStatus(String serviceReferenceId, String paymentStatus) {
+        return (OdooBillingPaymentStatus) getSession()
+                .createCriteria(OdooBillingPaymentStatus.class)
+                .add(Restrictions.eq("serviceReferenceId", serviceReferenceId))
+                .add(Restrictions.eq("paymentStatus", paymentStatus))
+                .add(Restrictions.eq("voided", (byte) 0))
+                .addOrder(Order.desc("id"))
                 .setMaxResults(1)
                 .uniqueResult();
     }

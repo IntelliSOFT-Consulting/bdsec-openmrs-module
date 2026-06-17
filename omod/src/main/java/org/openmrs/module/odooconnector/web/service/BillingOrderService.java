@@ -1,5 +1,6 @@
 package org.openmrs.module.odooconnector.web.service;
 
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.openmrs.Patient;
@@ -26,9 +27,12 @@ import java.util.Map;
  *
  * Responsibilities:
  *   - Validates Bearer-token / API-key authentication against Global Properties
- *   - Resolves patient_uuid and visit_uuid to OpenMRS integer IDs
- *   - Fans out the services[] array into one OdooBillingPaymentStatus record each
- *   - Enforces idempotency: a duplicate sale_id returns the original response immediately
+ *   - Resolves patient_uuid to the Bahmni patient identifier string and visit_uuid to its
+ *     OpenMRS integer visit ID
+ *   - Fans out the services[] array into one append-only OdooBillingPaymentStatus record each
+ *   - Enforces idempotency: a duplicate (sale_id, payment_status) pair returns the original
+ *     response immediately; a status transition for the same sale_id (e.g. PENDING -&gt; PAID)
+ *     is NOT a duplicate and is persisted as a new history row
  *
  * Global Properties consumed:
  *   odooconnector.billing.inboundBearerToken  — expected value of "Bearer <token>"
@@ -88,30 +92,40 @@ public class BillingOrderService {
         String saleIdStr = String.valueOf(saleId);
         String saleName  = nvl((String) body.get("sale_name"), saleIdStr);
 
-        log.info("[BillingOrder] Received — sale_id=" + saleId + " sale_name=" + saleName
-                + " patient_uuid=" + patientUuid + " visit_uuid=" + visitUuid);
+        // payment_status is normalized to uppercase before anything else touches it, since it's
+        // both the idempotency key (alongside sale_id) and what gets persisted/queried later.
+        String paymentStatus = nvl((String) body.get("payment_status"), "PENDING").toUpperCase();
 
-        // --- Idempotency: if we have already stored a record for this sale_id, return early ---
+        log.info("[BillingOrder] Received — sale_id=" + saleId + " sale_name=" + saleName
+                + " patient_uuid=" + patientUuid + " visit_uuid=" + visitUuid
+                + " payment_status=" + paymentStatus);
+
+        // --- Idempotency: a duplicate is the SAME sale_id AND the SAME payment_status. A status
+        // transition for the same sale_id (e.g. PENDING -> PAID) is not a duplicate and must be
+        // allowed through as a new history row. ---
         OdooBillingPaymentStatus existing =
                 Context.getService(OdooBillingPaymentStatusService.class)
-                       .getFirstByServiceReferenceId(saleIdStr);
+                       .getLatestByServiceReferenceIdAndStatus(saleIdStr, paymentStatus);
         if (existing != null) {
-            log.info("[BillingOrder] Duplicate sale_id=" + saleId
+            log.info("[BillingOrder] Duplicate sale_id=" + saleId + " payment_status=" + paymentStatus
                     + " — returning cached response (record id=" + existing.getId() + ")");
             return successResponse(saleId, existing.getId(), existing.getUpdatedAt(),
-                    "Billing order already processed (duplicate sale_id)");
+                    "Billing order already processed (duplicate sale_id + payment_status)");
         }
 
-        // --- Resolve patient UUID → integer ID ---
+        // --- Resolve patient UUID → Patient, then the Bahmni patient identifier string ---
         // Proxy privileges are required because the request authenticates via a custom
         // Bearer token, not an OpenMRS session, so the thread has no user context.
         Context.addProxyPrivilege("Get Patients");
         Context.addProxyPrivilege("Get Visits");
         Patient patient;
         Visit   visit;
+        String  resolvedIdentifier;
         try {
             patient = Context.getPatientService().getPatientByUuid(patientUuid);
             visit   = Context.getVisitService().getVisitByUuid(visitUuid);
+            resolvedIdentifier = (patient != null && patient.getPatientIdentifier() != null)
+                    ? patient.getPatientIdentifier().getIdentifier() : null;
         } finally {
             Context.removeProxyPrivilege("Get Patients");
             Context.removeProxyPrivilege("Get Visits");
@@ -127,9 +141,28 @@ public class BillingOrderService {
             httpResponse.setStatus(HttpServletResponse.SC_BAD_REQUEST);
             return errorResponse("Visit not found for visit_uuid=" + visitUuid);
         }
+        if (resolvedIdentifier == null) {
+            log.warn("[BillingOrder] Patient has no identifier — uuid=" + patientUuid);
+            httpResponse.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+            return errorResponse("Patient " + patientUuid + " has no identifier — cannot process billing order");
+        }
 
-        // --- Extract financial / metadata fields ---
-        String      paymentStatus = nvl((String) body.get("payment_status"), "PENDING").toUpperCase();
+        // --- Validate the payload's own patient_id, but never use it for persistence: the
+        // identifier resolved above (from the authoritative patient_uuid) is always what's stored.
+        // Read via String.valueOf — if Odoo ever sends this as a bare JSON number rather than a
+        // quoted string, it deserializes as a Number, not a String, and a hard cast would throw. ---
+        Object payloadPatientIdObj = body.get("patient_id");
+        String payloadPatientId = payloadPatientIdObj != null ? String.valueOf(payloadPatientIdObj) : null;
+        if (payloadPatientIdObj instanceof Number || (payloadPatientId != null && StringUtils.isNumeric(payloadPatientId))) {
+            log.warn("[BillingOrder] Payload patient_id='" + payloadPatientId + "' is numeric — ignoring it, "
+                    + "using resolved Bahmni identifier '" + resolvedIdentifier + "' instead");
+        } else if (payloadPatientId != null && !payloadPatientId.equals(resolvedIdentifier)) {
+            log.warn("[BillingOrder] Payload patient_id='" + payloadPatientId + "' does not match resolved "
+                    + "identifier '" + resolvedIdentifier + "' for patient_uuid=" + patientUuid
+                    + " — using the resolved identifier");
+        }
+
+        // --- Extract remaining financial / metadata fields ---
         String      currency      = nvl((String) body.get("currency"), "ETB");
         String      customerType  = nvl((String) body.get("customer_type"), "");
         BigDecimal  amountDue     = toBigDecimal(body.get("amountDue"));
@@ -137,7 +170,7 @@ public class BillingOrderService {
         Date        paymentDate   = parseDate((String) body.get("payment_date"));
         Date        syncTs        = new Date();
 
-        log.info("[BillingOrder] Mapped — patientId=" + patient.getId()
+        log.info("[BillingOrder] Mapped — patientId=" + resolvedIdentifier
                 + " visitId=" + visit.getId()
                 + " paymentStatus=" + paymentStatus
                 + " amountDue=" + amountDue
@@ -162,7 +195,7 @@ public class BillingOrderService {
             String svcType   = rawType.trim().toUpperCase();
 
             OdooBillingPaymentStatusDTO dto = new OdooBillingPaymentStatusDTO();
-            dto.setPatientId(patient.getId());
+            dto.setPatientId(resolvedIdentifier);
             dto.setVisitId(visit.getId());
             dto.setServiceType(svcType);
             dto.setServiceReferenceId(saleIdStr);   // used for idempotency

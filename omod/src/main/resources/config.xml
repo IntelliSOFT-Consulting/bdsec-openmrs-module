@@ -101,6 +101,40 @@
 			the consultation is billed through. Change per deployment if multiple shops exist.
 		</description>
 	</globalProperty>
+	<globalProperty>
+		<property>odooconnector.consultation.connectTimeoutSeconds</property>
+		<defaultValue>15</defaultValue>
+		<description>
+			Max seconds to wait for the TCP/TLS connection to Odoo to establish (auth and sales
+			calls). Increase if the network path to Odoo is slow.
+		</description>
+	</globalProperty>
+	<globalProperty>
+		<property>odooconnector.consultation.readTimeoutSeconds</property>
+		<defaultValue>30</defaultValue>
+		<description>
+			Max seconds to wait for Odoo's response once a request has been sent. Covers Odoo-side
+			processing time for authentication and sale order creation.
+		</description>
+	</globalProperty>
+	<globalProperty>
+		<property>odooconnector.consultation.maxRetries</property>
+		<defaultValue>2</defaultValue>
+		<description>
+			Number of automatic retries (in addition to the first attempt) on connection-level
+			failures only (DNS failure, connection refused, connect-phase timeout). Read-timeouts
+			after a request was already sent to Odoo are never auto-retried, to avoid creating
+			duplicate sale orders.
+		</description>
+	</globalProperty>
+	<globalProperty>
+		<property>odooconnector.consultation.retryBackoffMillis</property>
+		<defaultValue>1500</defaultValue>
+		<description>
+			Base backoff delay in milliseconds before each retry, multiplied by the attempt number
+			(e.g. 1500ms before retry 1, 3000ms before retry 2).
+		</description>
+	</globalProperty>
 
 	<!-- Billing gate settings -->
 	<globalProperty>

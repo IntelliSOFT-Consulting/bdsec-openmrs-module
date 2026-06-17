@@ -46,10 +46,9 @@ public class OdooBillingPaymentStatusServiceImpl
                 + " status=" + dto.getPaymentStatus()
                 + " invoice=" + dto.getOdooInvoiceId());
 
-        OdooBillingPaymentStatus existing = dao.getByPatientVisitService(
-                dto.getPatientId(), dto.getVisitId(), dto.getServiceType());
-
-        OdooBillingPaymentStatus record = (existing != null) ? existing : new OdooBillingPaymentStatus();
+        // Append-only: always insert a new row so the full payment lifecycle (e.g. PENDING ->
+        // PAID) is preserved as history. Never look up and update an existing row in place.
+        OdooBillingPaymentStatus record = new OdooBillingPaymentStatus();
 
         record.setPatientId(dto.getPatientId());
         record.setVisitId(dto.getVisitId());
@@ -70,22 +69,21 @@ public class OdooBillingPaymentStatusServiceImpl
 
         OdooBillingPaymentStatus saved = dao.saveOrUpdate(record);
 
-        log.info("[OdooBilling] Upsert complete — id=" + saved.getId()
+        log.info("[OdooBilling] History row inserted — id=" + saved.getId()
                 + " uuid=" + saved.getUuid()
-                + " status=" + saved.getPaymentStatus()
-                + " action=" + (existing != null ? "UPDATE" : "INSERT"));
+                + " status=" + saved.getPaymentStatus());
 
         return saved;
     }
 
     @Override
-    public OdooBillingPaymentStatus getPaymentStatus(Integer patientId, Integer visitId, String serviceType)
+    public OdooBillingPaymentStatus getPaymentStatus(String patientId, Integer visitId, String serviceType)
             throws APIException {
         return dao.getByPatientVisitService(patientId, visitId, serviceType);
     }
 
     @Override
-    public boolean isServicePaid(Integer patientId, Integer visitId, String serviceType) throws APIException {
+    public boolean isServicePaid(String patientId, Integer visitId, String serviceType) throws APIException {
         log.debug("[OdooBilling] Payment gate check — patient=" + patientId
                 + " visit=" + visitId
                 + " service=" + serviceType);
@@ -112,6 +110,12 @@ public class OdooBillingPaymentStatusServiceImpl
     @Override
     public OdooBillingPaymentStatus getFirstByServiceReferenceId(String serviceReferenceId) throws APIException {
         return dao.getFirstByServiceReferenceId(serviceReferenceId);
+    }
+
+    @Override
+    public OdooBillingPaymentStatus getLatestByServiceReferenceIdAndStatus(String serviceReferenceId, String paymentStatus)
+            throws APIException {
+        return dao.getLatestByServiceReferenceIdAndStatus(serviceReferenceId, paymentStatus);
     }
 
     @Override

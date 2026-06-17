@@ -12,7 +12,10 @@ import org.openmrs.module.webservices.rest.SimpleObject;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.net.ConnectException;
+import java.net.UnknownHostException;
 import java.util.HashMap;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Forwards consultation fee payloads from OpenMRS to the Odoo sales endpoint.
@@ -72,6 +75,33 @@ public class ConsultationFeeOdooService {
 			catch (NumberFormatException ignored) {}
 		}
 		return 1;
+	}
+
+	private int getIntGlobalProperty(String property, int defaultValue) {
+		String value = Context.getAdministrationService().getGlobalProperty(property);
+		if (value != null && !value.trim().isEmpty()) {
+			try {
+				return Integer.parseInt(value.trim());
+			}
+			catch (NumberFormatException ignored) {}
+		}
+		return defaultValue;
+	}
+
+	private int getConnectTimeoutSeconds() {
+		return getIntGlobalProperty("odooconnector.consultation.connectTimeoutSeconds", 15);
+	}
+
+	private int getReadTimeoutSeconds() {
+		return getIntGlobalProperty("odooconnector.consultation.readTimeoutSeconds", 30);
+	}
+
+	private int getMaxRetries() {
+		return getIntGlobalProperty("odooconnector.consultation.maxRetries", 2);
+	}
+
+	private long getRetryBackoffMillis() {
+		return getIntGlobalProperty("odooconnector.consultation.retryBackoffMillis", 1500);
 	}
 
 	// ---------- Authentication ----------
@@ -187,59 +217,153 @@ public class ConsultationFeeOdooService {
 
 		log.info("[ConsultationFee] Payload to Odoo: " + salesBody);
 
-		OkHttpClient client = new OkHttpClient();
-		try {
-			String sessionId = authenticate(client);
+		OkHttpClient client = new OkHttpClient.Builder()
+		        .connectTimeout(getConnectTimeoutSeconds(), TimeUnit.SECONDS)
+		        .readTimeout(getReadTimeoutSeconds(), TimeUnit.SECONDS)
+		        .writeTimeout(getReadTimeoutSeconds(), TimeUnit.SECONDS)
+		        .build();
 
-			Request salesRequest = new Request.Builder()
-			        .url(odooEndpoint)
-			        .post(RequestBody.create(salesBody, JSON))
-			        .addHeader("Content-Type", "application/json")
-			        .addHeader("Cookie", "session_id=" + sessionId)
-			        .build();
+		int maxAttempts = getMaxRetries() + 1;
+		IOException lastError = null;
 
-			try (Response salesResponse = client.newCall(salesRequest).execute()) {
-				String responseBody = salesResponse.body() != null ? salesResponse.body().string() : "";
-				log.info("[ConsultationFee] Odoo sales response — HTTP " + salesResponse.code()
-				        + " body: " + responseBody);
-
-				SimpleObject result = new SimpleObject();
-				result.put("status", "consultation_forwarded");
-				result.put("odooResponseCode", salesResponse.code());
-				result.put("patientUuid", patientUuid);
-				result.put("VisitUuid", visitUuid);
-
-				// Surface key Odoo response fields for the caller
-				try {
-					SimpleObject odooResult = SimpleObject.parseJson(responseBody);
-					surfaceOdooResponseFields(odooResult, result);
+		for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+			try {
+				log.info("[ConsultationFee] Attempt " + attempt + "/" + maxAttempts
+				        + " — authenticating with Odoo for patientUuid=" + patientUuid);
+				String sessionId = authenticate(client);
+				return postSalesOrder(client, sessionId, salesBody, odooEndpoint, patientId, patientUuid, visitUuid);
+			}
+			catch (IOException e) {
+				lastError = e;
+				boolean retryable = isRetryableConnectionError(e) && attempt < maxAttempts;
+				log.warn("[ConsultationFee] Attempt " + attempt + " failed for patientUuid=" + patientUuid
+				        + " — " + e.getMessage() + (retryable ? " — retrying after backoff" : " — giving up"));
+				if (retryable) {
+					sleepBeforeRetry(attempt);
+					continue;
 				}
-				catch (Exception parseEx) {
-					log.warn("[ConsultationFee] Could not parse Odoo response as JSON: " + parseEx.getMessage());
-				}
-
-				if (salesResponse.isSuccessful()) {
-					log.info("[ConsultationFee] Sale order created successfully"
-					        + " — sale_order_id=" + result.get("sale_order_id")
-					        + " sale_order_name=" + result.get("sale_order_name")
-					        + " patient_name=" + result.get("patient_name"));
-				} else {
-					log.warn("[ConsultationFee] Odoo returned non-success HTTP " + salesResponse.code()
-					        + " for patient=" + patientId);
-				}
-
-				return result;
+				break;
 			}
 		}
-		catch (IOException e) {
-			log.error("[ConsultationFee] Failed to reach Odoo — encounter already saved, payload not forwarded: "
-			        + e.getMessage(), e);
+
+		log.error("[ConsultationFee] Patient sync to Odoo FAILED after " + maxAttempts
+		        + " attempt(s) for patientUuid=" + patientUuid + " — encounter already saved, payload not forwarded: "
+		        + (lastError != null ? lastError.getMessage() : "unknown error"), lastError);
+
+		SimpleObject result = new SimpleObject();
+		result.put("status", "error");
+		result.put("errorType", "patient_sync_failed");
+		result.put("patientSynced", false);
+		result.put("message", "Unable to reach the billing system (Odoo) to synchronize the patient record after "
+		        + maxAttempts + " attempt(s): " + (lastError != null ? lastError.getMessage() : "unknown error"));
+		result.put("patientUuid", patientUuid);
+		result.put("VisitUuid", visitUuid);
+		return result;
+	}
+
+	/**
+	 * Returns true only for connection-level failures (DNS, refused connection, connect-phase
+	 * timeout) that happen before any data reaches Odoo — safe to retry. Read-timeouts on a
+	 * request that was already sent are NOT retried here, since Odoo may have already created
+	 * the sale order and a blind retry could create a duplicate (no idempotency key exists on
+	 * /api/bdsec/sales, unlike the inbound billing/orders endpoint).
+	 */
+	private boolean isRetryableConnectionError(IOException e) {
+		if (e instanceof UnknownHostException || e instanceof ConnectException) {
+			return true;
+		}
+		String msg = e.getMessage();
+		return msg != null && msg.toLowerCase().contains("connect");
+	}
+
+	private void sleepBeforeRetry(int attempt) {
+		try {
+			Thread.sleep(getRetryBackoffMillis() * attempt);
+		}
+		catch (InterruptedException ie) {
+			Thread.currentThread().interrupt();
+		}
+	}
+
+	/**
+	 * Posts the sales payload to Odoo and classifies the result:
+	 *   patientSynced=true  — Odoo's response contains patient_id / patient_name / bahmni_patient_id
+	 *   errorType="patient_sync_failed" — patient fields absent (Odoo never recognized/created the patient)
+	 *   errorType="order_failed"        — patient synced but no sale order was created
+	 */
+	private SimpleObject postSalesOrder(OkHttpClient client, String sessionId, String salesBody, String odooEndpoint,
+	        String patientId, String patientUuid, String visitUuid) throws IOException {
+
+		Request salesRequest = new Request.Builder()
+		        .url(odooEndpoint)
+		        .post(RequestBody.create(salesBody, JSON))
+		        .addHeader("Content-Type", "application/json")
+		        .addHeader("Cookie", "session_id=" + sessionId)
+		        .build();
+
+		try (Response salesResponse = client.newCall(salesRequest).execute()) {
+			String responseBody = salesResponse.body() != null ? salesResponse.body().string() : "";
+			log.info("[ConsultationFee] Odoo sales response — HTTP " + salesResponse.code()
+			        + " body: " + responseBody);
 
 			SimpleObject result = new SimpleObject();
-			result.put("status", "consultation_logged");
-			result.put("error", e.getMessage());
+			result.put("odooResponseCode", salesResponse.code());
 			result.put("patientUuid", patientUuid);
 			result.put("VisitUuid", visitUuid);
+
+			SimpleObject odooResult = null;
+			try {
+				odooResult = SimpleObject.parseJson(responseBody);
+				surfaceOdooResponseFields(odooResult, result);
+			}
+			catch (Exception parseEx) {
+				log.warn("[ConsultationFee] Could not parse Odoo response as JSON: " + parseEx.getMessage());
+			}
+
+			boolean patientSynced = odooResult != null && (odooResult.containsKey("patient_id")
+			        || odooResult.containsKey("patient_name") || odooResult.containsKey("bahmni_patient_id"));
+			boolean orderCreated = odooResult != null
+			        && (odooResult.containsKey("sale_order_id") || odooResult.containsKey("sale_order_name"));
+			// Odoo's /api/bdsec/sales does not echo patient_* fields back on a sale-order-level
+			// validation rejection (e.g. invalid Payment_type) — it only returns {status, error,
+			// details}. That shape is still a structured response from Odoo's own application code,
+			// not a sign that patient sync failed, so it must NOT be lumped in with connectivity
+			// failures below.
+			boolean odooStructuredError = odooResult != null
+			        && (odooResult.containsKey("error") || odooResult.containsKey("status"));
+
+			result.put("patientSynced", patientSynced);
+
+			if (patientSynced && orderCreated && salesResponse.isSuccessful()) {
+				log.info("[ConsultationFee] Patient synced and sale order created successfully"
+				        + " — sale_order_id=" + result.get("sale_order_id")
+				        + " sale_order_name=" + result.get("sale_order_name")
+				        + " patient_name=" + result.get("patient_name"));
+			}
+			else if (patientSynced) {
+				result.put("status", "error");
+				result.put("errorType", "order_failed");
+				ensureMessage(result, odooResult, "Patient synchronized, but the consultation order could not be created.");
+				log.warn("[ConsultationFee] Patient synced but ORDER creation FAILED — patientUuid=" + patientUuid
+				        + " patient_name=" + result.get("patient_name") + " message=" + result.get("message"));
+			}
+			else if (odooStructuredError) {
+				result.put("status", "error");
+				result.put("errorType", "order_failed");
+				ensureMessage(result, odooResult, "Odoo rejected the consultation order (HTTP " + salesResponse.code() + ").");
+				log.warn("[ConsultationFee] Odoo rejected the ORDER (structured error, patient status unknown) —"
+				        + " patientId=" + patientId + " patientUuid=" + patientUuid
+				        + " httpCode=" + salesResponse.code() + " message=" + result.get("message"));
+			}
+			else {
+				result.put("status", "error");
+				result.put("errorType", "patient_sync_failed");
+				ensureMessage(result, odooResult, "Patient record could not be synchronized with the billing system "
+				        + "(Odoo HTTP " + salesResponse.code() + ").");
+				log.warn("[ConsultationFee] Patient sync FAILED — patientId=" + patientId
+				        + " patientUuid=" + patientUuid + " httpCode=" + salesResponse.code());
+			}
+
 			return result;
 		}
 	}
@@ -248,7 +372,7 @@ public class ConsultationFeeOdooService {
 
 	private void surfaceOdooResponseFields(SimpleObject odooResult, SimpleObject out) {
 		String[] fields = {
-		        "status", "message", "sale_order_id", "sale_order_name",
+		        "status", "message", "error", "details", "sale_order_id", "sale_order_name",
 		        "patient_id", "patient_name", "bahmni_patient_id", "patient_unique_id",
 		        "shop_id", "shop_name", "payment_type", "is_cbhi_patient",
 		        "is_insurance_customer", "state", "warnings"
@@ -258,6 +382,33 @@ public class ConsultationFeeOdooService {
 				out.put(field, odooResult.get(field));
 			}
 		}
+	}
+
+	/**
+	 * Sets result.message from Odoo's own error detail when available (preferring the most
+	 * specific field), falling back to the given generic message only when Odoo gave us nothing
+	 * usable. Never overwrites a message already present.
+	 */
+	private void ensureMessage(SimpleObject result, SimpleObject odooResult, String fallback) {
+		if (result.containsKey("message") && result.get("message") != null
+		        && !String.valueOf(result.get("message")).isEmpty()) {
+			return;
+		}
+		String detail = null;
+		if (odooResult != null) {
+			Object error = odooResult.get("error");
+			Object details = odooResult.get("details");
+			if (error != null && details != null) {
+				detail = error + " " + details;
+			}
+			else if (error != null) {
+				detail = String.valueOf(error);
+			}
+			else if (details != null) {
+				detail = String.valueOf(details);
+			}
+		}
+		result.put("message", detail != null && !detail.isEmpty() ? detail : fallback);
 	}
 
 	/**
