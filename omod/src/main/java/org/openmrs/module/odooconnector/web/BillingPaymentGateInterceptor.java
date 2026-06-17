@@ -12,8 +12,6 @@ package org.openmrs.module.odooconnector.web;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.openmrs.Patient;
-import org.openmrs.Visit;
 import org.openmrs.api.AdministrationService;
 import org.openmrs.api.context.Context;
 import org.openmrs.module.odooconnector.api.OdooBillingPaymentStatusService;
@@ -91,22 +89,24 @@ public class BillingPaymentGateInterceptor extends HandlerInterceptorAdapter {
             return true;
         }
 
-        Integer patientId = resolvePatientId(request);
-        Integer visitId   = resolveVisitId(request);
+        String  patientIdentifier = PatientVisitResolver.resolvePatientIdentifier(
+                request.getParameter("patientId"), request.getParameter("patientUuid"));
+        Integer visitId           = PatientVisitResolver.resolveVisitId(
+                request.getParameter("visitId"), request.getParameter("visitUuid"));
 
-        if (patientId == null || visitId == null) {
-            log.warn("[BillingGate] Could not resolve patientId or visitId — allowing request to proceed uri=" + uri
-                    + " patientId=" + patientId + " visitId=" + visitId);
+        if (patientIdentifier == null || visitId == null) {
+            log.warn("[BillingGate] Could not resolve patient identifier or visitId — allowing request to proceed uri=" + uri
+                    + " patientIdentifier=" + patientIdentifier + " visitId=" + visitId);
             return true;
         }
 
         // Per-patient emergency bypass list
-        if (isPatientBypassed(patientId, adminService)) {
-            log.info("[BillingGate] BYPASS — patient=" + patientId + " is on emergency bypass list uri=" + uri);
+        if (isPatientBypassed(patientIdentifier, adminService)) {
+            log.info("[BillingGate] BYPASS — patient=" + patientIdentifier + " is on emergency bypass list uri=" + uri);
             return true;
         }
 
-        log.info("[BillingGate] Gate check triggered — patient=" + patientId
+        log.info("[BillingGate] Gate check triggered — patient=" + patientIdentifier
                 + " visit=" + visitId
                 + " service=" + serviceType
                 + " uri=" + uri);
@@ -114,16 +114,16 @@ public class BillingPaymentGateInterceptor extends HandlerInterceptorAdapter {
         OdooBillingPaymentStatusService billingService =
                 Context.getService(OdooBillingPaymentStatusService.class);
 
-        boolean paid = billingService.isServicePaid(patientId, visitId, serviceType);
+        boolean paid = billingService.isServicePaid(patientIdentifier, visitId, serviceType);
 
         if (paid) {
-            log.info("[BillingGate] ALLOWED — patient=" + patientId
+            log.info("[BillingGate] ALLOWED — patient=" + patientIdentifier
                     + " visit=" + visitId
                     + " service=" + serviceType);
             return true;
         }
 
-        log.warn("[BillingGate] BLOCKED — patient=" + patientId
+        log.warn("[BillingGate] BLOCKED — patient=" + patientIdentifier
                 + " visit=" + visitId
                 + " service=" + serviceType
                 + " uri=" + uri);
@@ -134,7 +134,7 @@ public class BillingPaymentGateInterceptor extends HandlerInterceptorAdapter {
         response.getWriter().write(
                 "{\"error\":\"Payment Required\""
                 + ",\"message\":\"Payment required for service " + serviceType + "\""
-                + ",\"patientId\":" + patientId
+                + ",\"patientId\":\"" + patientIdentifier + "\""
                 + ",\"visitId\":" + visitId
                 + ",\"serviceType\":\"" + serviceType + "\"}");
         response.getWriter().flush();
@@ -154,48 +154,14 @@ public class BillingPaymentGateInterceptor extends HandlerInterceptorAdapter {
         return null;
     }
 
-    private Integer resolvePatientId(HttpServletRequest request) {
-        String raw = request.getParameter("patientId");
-        if (StringUtils.isNumeric(raw)) {
-            return Integer.parseInt(raw);
-        }
-        String uuid = request.getParameter("patientUuid");
-        if (StringUtils.isNotBlank(uuid)) {
-            try {
-                Patient patient = Context.getPatientService().getPatientByUuid(uuid);
-                return patient != null ? patient.getPatientId() : null;
-            } catch (Exception e) {
-                log.warn("[BillingGate] Could not resolve patient from uuid=" + uuid, e);
-            }
-        }
-        return null;
-    }
-
-    private Integer resolveVisitId(HttpServletRequest request) {
-        String raw = request.getParameter("visitId");
-        if (StringUtils.isNumeric(raw)) {
-            return Integer.parseInt(raw);
-        }
-        String uuid = request.getParameter("visitUuid");
-        if (StringUtils.isNotBlank(uuid)) {
-            try {
-                Visit visit = Context.getVisitService().getVisitByUuid(uuid);
-                return visit != null ? visit.getVisitId() : null;
-            } catch (Exception e) {
-                log.warn("[BillingGate] Could not resolve visit from uuid=" + uuid, e);
-            }
-        }
-        return null;
-    }
-
-    private boolean isPatientBypassed(Integer patientId, AdministrationService adminService) {
+    private boolean isPatientBypassed(String patientIdentifier, AdministrationService adminService) {
         String bypassList = adminService.getGlobalProperty(GP_BYPASS_PATIENTS, "");
         if (StringUtils.isBlank(bypassList)) {
             return false;
         }
-        // Bypass list is stored as comma-separated patient_id integers
+        // Bypass list is stored as comma-separated Bahmni patient identifiers (e.g. ABC200001,ABC200002)
         for (String entry : bypassList.split(",")) {
-            if (entry.trim().equals(String.valueOf(patientId))) {
+            if (entry.trim().equals(patientIdentifier)) {
                 return true;
             }
         }

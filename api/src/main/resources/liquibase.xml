@@ -79,4 +79,52 @@
         </sql>
     </changeSet>
 
+    <changeSet id="odooconnector-2026-06-17-1002" author="bdsec">
+        <preConditions onFail="MARK_RAN">
+            <and>
+                <tableExists tableName="odoo_billing_payment_status"/>
+                <columnExists tableName="odoo_billing_payment_status" columnName="patient_id"/>
+                <not><columnExists tableName="odoo_billing_payment_status" columnName="patient_identifier_tmp"/></not>
+            </and>
+        </preConditions>
+        <comment>
+            Switch odoo_billing_payment_status.patient_id from the internal numeric patient PK to
+            the Bahmni patient identifier string (e.g. BDSEC200001), so it matches what every other
+            part of the system (Odoo payloads, ConsultationFeeOdooService, the Bahmni UI) calls
+            "patient_id". Backfills existing rows from each patient's preferred identifier. A FK
+            back to patient(patient_id) is no longer possible once the column is a string — this is
+            an accepted tradeoff; referential integrity for patient_id is now enforced in
+            application code (BillingOrderService resolves and validates it via patient_uuid).
+        </comment>
+        <sql>
+            ALTER TABLE odoo_billing_payment_status ADD COLUMN patient_identifier_tmp VARCHAR(50) NULL;
+        </sql>
+        <sql>
+            UPDATE odoo_billing_payment_status obps
+            JOIN patient_identifier pi ON pi.patient_id = obps.patient_id AND pi.preferred = 1
+            SET obps.patient_identifier_tmp = pi.identifier;
+        </sql>
+        <sql>
+            ALTER TABLE odoo_billing_payment_status DROP FOREIGN KEY fk_obps_patient;
+        </sql>
+        <sql>
+            DROP INDEX idx_obps_patient_id ON odoo_billing_payment_status;
+        </sql>
+        <sql>
+            DROP INDEX idx_obps_pvs ON odoo_billing_payment_status;
+        </sql>
+        <sql>
+            ALTER TABLE odoo_billing_payment_status DROP COLUMN patient_id;
+        </sql>
+        <sql>
+            ALTER TABLE odoo_billing_payment_status CHANGE patient_identifier_tmp patient_id VARCHAR(50) NOT NULL;
+        </sql>
+        <sql>
+            CREATE INDEX idx_obps_patient_id ON odoo_billing_payment_status (patient_id);
+        </sql>
+        <sql>
+            CREATE INDEX idx_obps_pvs        ON odoo_billing_payment_status (patient_id, visit_id, service_type);
+        </sql>
+    </changeSet>
+
 </databaseChangeLog>

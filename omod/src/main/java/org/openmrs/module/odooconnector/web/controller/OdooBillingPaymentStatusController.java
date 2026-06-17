@@ -15,6 +15,7 @@ import org.openmrs.api.context.Context;
 import org.openmrs.module.odooconnector.OdooBillingPaymentStatus;
 import org.openmrs.module.odooconnector.OdooBillingPaymentStatusDTO;
 import org.openmrs.module.odooconnector.api.OdooBillingPaymentStatusService;
+import org.openmrs.module.odooconnector.web.PatientVisitResolver;
 import org.openmrs.module.webservices.rest.SimpleObject;
 import org.openmrs.module.webservices.rest.web.RestConstants;
 import org.springframework.http.HttpStatus;
@@ -46,8 +47,10 @@ import java.util.List;
  *        — return all services (and statuses) for a visit
  *
  * GET    /openmrs/ws/rest/v1/odoo/billing/is-paid
- *        ?patientId=&amp;visitId=&amp;serviceType=
- *        — boolean payment gate check used by BillingPaymentGateInterceptor
+ *        ?(patientId=|patientUuid=)&amp;(visitId=|visitUuid=)&amp;serviceType=
+ *        — boolean payment gate check; used by the Patient Queue (common/patient-search) before
+ *        navigating to the dashboard, and available as a general pre-flight check. Resolution
+ *        failure for either patient or visit fails safe and returns paid:false rather than erroring.
  * </pre>
  */
 @Controller("odooconnector.OdooBillingPaymentStatusController")
@@ -98,7 +101,7 @@ public class OdooBillingPaymentStatusController {
             method = RequestMethod.GET,
             produces = MediaType.APPLICATION_JSON_VALUE)
     public @ResponseBody SimpleObject getPaymentStatus(
-            @RequestParam Integer patientId,
+            @RequestParam String patientId,
             @RequestParam Integer visitId,
             @RequestParam String serviceType) {
 
@@ -157,36 +160,58 @@ public class OdooBillingPaymentStatusController {
 
     /**
      * Lightweight boolean gate check. Returns {@code {"paid": true|false}}.
-     * Called by the front-end and by {@code BillingPaymentGateInterceptor}.
+     * Called by the front-end (Patient Queue, before navigating to the dashboard) and usable
+     * standalone for any other pre-flight check.
+     *
+     * <p>Accepts either {@code patientId} (Bahmni identifier string) or {@code patientUuid}, and
+     * either {@code visitId} (integer) or {@code visitUuid} — at least one of each pair is
+     * required. If neither can be resolved, this fails safe and returns {@code paid: false}
+     * rather than erroring, since an unresolvable patient/visit is exactly the kind of ambiguous
+     * state that should block access.
      */
     @RequestMapping(
             value = "/is-paid",
             method = RequestMethod.GET,
             produces = MediaType.APPLICATION_JSON_VALUE)
     public @ResponseBody SimpleObject isServicePaid(
-            @RequestParam Integer patientId,
-            @RequestParam Integer visitId,
+            @RequestParam(required = false) String patientId,
+            @RequestParam(required = false) String patientUuid,
+            @RequestParam(required = false) String visitId,
+            @RequestParam(required = false) String visitUuid,
             @RequestParam String serviceType) {
 
-        log.info("[OdooBilling] GET /odoo/billing/is-paid — patient=" + patientId
-                + " visit=" + visitId + " service=" + serviceType);
+        String  resolvedPatientId = PatientVisitResolver.resolvePatientIdentifier(patientId, patientUuid);
+        Integer resolvedVisitId   = PatientVisitResolver.resolveVisitId(visitId, visitUuid);
+
+        log.info("[OdooBilling] GET /odoo/billing/is-paid — patient=" + resolvedPatientId
+                + " visit=" + resolvedVisitId + " service=" + serviceType);
+
+        SimpleObject result = new SimpleObject();
+
+        if (resolvedPatientId == null || resolvedVisitId == null) {
+            log.warn("[OdooBilling] Gate check result BLOCKED — could not resolve patient/visit"
+                    + " patientId=" + patientId + " patientUuid=" + patientUuid
+                    + " visitId=" + visitId + " visitUuid=" + visitUuid);
+            result.put("paid", false);
+            result.put("reason", "Could not resolve patient and/or visit");
+            return result;
+        }
 
         boolean paid =
                 Context.getService(OdooBillingPaymentStatusService.class)
-                       .isServicePaid(patientId, visitId, serviceType);
+                       .isServicePaid(resolvedPatientId, resolvedVisitId, serviceType);
 
         if (paid) {
-            log.info("[OdooBilling] Gate check result ALLOWED — patient=" + patientId
-                    + " visit=" + visitId + " service=" + serviceType);
+            log.info("[OdooBilling] Gate check result ALLOWED — patient=" + resolvedPatientId
+                    + " visit=" + resolvedVisitId + " service=" + serviceType);
         } else {
-            log.warn("[OdooBilling] Gate check result BLOCKED — patient=" + patientId
-                    + " visit=" + visitId + " service=" + serviceType);
+            log.warn("[OdooBilling] Gate check result BLOCKED — patient=" + resolvedPatientId
+                    + " visit=" + resolvedVisitId + " service=" + serviceType);
         }
 
-        SimpleObject result = new SimpleObject();
         result.put("paid", paid);
-        result.put("patientId", patientId);
-        result.put("visitId", visitId);
+        result.put("patientId", resolvedPatientId);
+        result.put("visitId", resolvedVisitId);
         result.put("serviceType", serviceType);
         return result;
     }

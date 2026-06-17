@@ -27,30 +27,36 @@ import java.util.List;
 public interface OdooBillingPaymentStatusService extends OpenmrsService {
 
     /**
-     * Upserts a payment record received from Odoo.
-     * If a non-voided record already exists for the (patientId, visitId, serviceType)
-     * combination it is updated in-place; otherwise a new row is inserted.
+     * Records a payment status update received from Odoo as a new, append-only history row.
+     * Existing rows for the same (patientId, visitId, serviceType) are never updated or
+     * overwritten — every call inserts a new row, so the full payment lifecycle (e.g.
+     * PENDING -&gt; PAID) is preserved. Callers are responsible for idempotency (see
+     * {@link #getLatestByServiceReferenceIdAndStatus}) before calling this method.
      *
-     * @param dto payload pushed by Odoo
+     * @param dto payload pushed by Odoo; patientId must be the Bahmni patient identifier string
      * @return the persisted entity
      */
     @Transactional
     OdooBillingPaymentStatus saveOrUpdatePaymentStatus(OdooBillingPaymentStatusDTO dto) throws APIException;
 
     /**
-     * Returns the current payment record for a given patient/visit/service combination,
+     * Returns the most recent payment record for a given patient/visit/service combination,
      * or null when no record has been synced from Odoo yet.
+     *
+     * @param patientId Bahmni patient identifier string (e.g. "BDSEC200001")
      */
     @Transactional(readOnly = true)
-    OdooBillingPaymentStatus getPaymentStatus(Integer patientId, Integer visitId, String serviceType) throws APIException;
+    OdooBillingPaymentStatus getPaymentStatus(String patientId, Integer visitId, String serviceType) throws APIException;
 
     /**
-     * Returns {@code true} when the service has payment_status PAID or WAIVED,
-     * {@code false} in all other cases (including when no record exists — fail-safe
-     * behaviour keeps the gate closed until Odoo confirms payment).
+     * Returns {@code true} when the most recent record for this combination has payment_status
+     * PAID or WAIVED, {@code false} in all other cases (including when no record exists —
+     * fail-safe behaviour keeps the gate closed until Odoo confirms payment).
+     *
+     * @param patientId Bahmni patient identifier string (e.g. "BDSEC200001")
      */
     @Transactional(readOnly = true)
-    boolean isServicePaid(Integer patientId, Integer visitId, String serviceType) throws APIException;
+    boolean isServicePaid(String patientId, Integer visitId, String serviceType) throws APIException;
 
     /**
      * Returns all non-voided PENDING records for the given visit.
@@ -68,4 +74,21 @@ public interface OdooBillingPaymentStatusService extends OpenmrsService {
      */
     @Transactional
     void voidPaymentRecord(Integer id, String reason, Integer voidedBy) throws APIException;
+
+    /**
+     * Returns the first non-voided record whose service_reference_id equals the given value,
+     * or null. General-purpose "any record for this sale_id" lookup — not used for idempotency
+     * decisions (see {@link #getLatestByServiceReferenceIdAndStatus}).
+     */
+    @Transactional(readOnly = true)
+    OdooBillingPaymentStatus getFirstByServiceReferenceId(String serviceReferenceId) throws APIException;
+
+    /**
+     * Returns the most recent non-voided record matching both the Odoo sale_id
+     * (service_reference_id) and payment_status, or null if none exists. Used for idempotency:
+     * a duplicate push is one with the same sale_id AND the same status — a status transition
+     * for the same sale_id is not a duplicate and should be persisted as a new row.
+     */
+    @Transactional(readOnly = true)
+    OdooBillingPaymentStatus getLatestByServiceReferenceIdAndStatus(String serviceReferenceId, String paymentStatus) throws APIException;
 }
