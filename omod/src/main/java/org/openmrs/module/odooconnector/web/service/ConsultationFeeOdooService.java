@@ -9,12 +9,15 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.openmrs.api.context.Context;
 import org.openmrs.module.webservices.rest.SimpleObject;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.net.ConnectException;
 import java.net.UnknownHostException;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -38,6 +41,9 @@ public class ConsultationFeeOdooService {
 	protected final Log log = LogFactory.getLog(getClass());
 
 	private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
+
+	@Autowired
+	private BillingOrderService billingOrderService;
 
 	// ---------- Global Property accessors ----------
 
@@ -339,6 +345,7 @@ public class ConsultationFeeOdooService {
 				        + " — sale_order_id=" + result.get("sale_order_id")
 				        + " sale_order_name=" + result.get("sale_order_name")
 				        + " patient_name=" + result.get("patient_name"));
+				replicatePendingPaymentStatus(odooResult, patientId, patientUuid, visitUuid);
 			}
 			else if (patientSynced) {
 				result.put("status", "error");
@@ -365,6 +372,41 @@ public class ConsultationFeeOdooService {
 			}
 
 			return result;
+		}
+	}
+
+	/**
+	 * Replicates the successful Odoo sales response into odoo_billing_payment_status via
+	 * BillingOrderService — the same persistence path Odoo's own billing/orders push uses (Part B
+	 * of the integration) — so a row exists with payment_status=PENDING as soon as the
+	 * consultation sale order is created, rather than waiting for Odoo to push the real payment
+	 * confirmation later. Best-effort: any failure here is logged and swallowed so it can never
+	 * affect the consultation-fee response already being returned to the Bahmni frontend.
+	 */
+	private void replicatePendingPaymentStatus(SimpleObject odooResult, String patientId, String patientUuid,
+	        String visitUuid) {
+		try {
+			Map<String, Object> billingPayload = new HashMap<>();
+			billingPayload.put("sale_id", odooResult.get("sale_order_id"));
+			billingPayload.put("sale_name", odooResult.get("sale_order_name"));
+			billingPayload.put("patient_id", patientId);
+			billingPayload.put("patient_uuid", patientUuid);
+			billingPayload.put("visit_uuid", visitUuid);
+			billingPayload.put("payment_status", "Pending");
+			Object paymentType = odooResult.get("payment_type");
+			if (paymentType != null) {
+				billingPayload.put("customer_type", paymentType);
+			}
+			billingPayload.put("services",
+			        Collections.singletonList(Collections.singletonMap("serviceType", "Consultation")));
+
+			SimpleObject billingResult = billingOrderService.processBillingOrder(billingPayload);
+			log.info("[ConsultationFee] Replicated Odoo sales response to odoo_billing_payment_status as PENDING"
+			        + " — sale_order_id=" + odooResult.get("sale_order_id") + " result=" + billingResult);
+		}
+		catch (Exception e) {
+			log.warn("[ConsultationFee] Failed to replicate Odoo sales response to odoo_billing_payment_status"
+			        + " — patientUuid=" + patientUuid + " VisitUuid=" + visitUuid + ": " + e.getMessage(), e);
 		}
 	}
 

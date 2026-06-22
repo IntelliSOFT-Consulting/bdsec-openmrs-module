@@ -19,7 +19,10 @@ import java.util.Date;
  */
 public class OdooBillingPaymentStatusDTO {
 	
-	/** Bahmni patient identifier string (e.g. "BDSEC200001") — never the internal numeric patient PK. */
+	/**
+	 * Bahmni patient identifier string (e.g. "BDSEC200001") — never the internal numeric patient
+	 * PK.
+	 */
 	private String patientId;
 	
 	private Integer visitId;
@@ -49,7 +52,7 @@ public class OdooBillingPaymentStatusDTO {
 	public String getPatientId() {
 		return patientId;
 	}
-
+	
 	public void setPatientId(String patientId) {
 		this.patientId = patientId;
 	}
