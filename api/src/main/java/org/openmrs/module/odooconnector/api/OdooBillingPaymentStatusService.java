@@ -91,4 +91,21 @@ public interface OdooBillingPaymentStatusService extends OpenmrsService {
      */
     @Transactional(readOnly = true)
     OdooBillingPaymentStatus getLatestByServiceReferenceIdAndStatus(String serviceReferenceId, String paymentStatus) throws APIException;
+
+    /**
+     * Returns the most recent non-voided BED-service record for the given bed_id, or null if the
+     * bed has never been reserved. A bed is currently reserved iff this record's payment_status is
+     * PENDING, PAID, or WAIVED (not CANCELLED) — used both to block double-booking and to drive the
+     * reservation badge shown on the ward bed grid.
+     */
+    @Transactional(readOnly = true)
+    OdooBillingPaymentStatus getLatestByBedId(Integer bedId) throws APIException;
+
+    /**
+     * Returns every non-voided BED-service record, ordered so that grouping by bedId and taking
+     * the first row per group yields the latest record per bed. Used by BedOrderOdooService to
+     * compute ward/room-level reservation indicators.
+     */
+    @Transactional(readOnly = true)
+    List<OdooBillingPaymentStatus> getAllBedServiceRecords() throws APIException;
 }

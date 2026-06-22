@@ -106,4 +106,28 @@ public class OdooBillingPaymentStatusDaoImpl implements OdooBillingPaymentStatus
                 .setMaxResults(1)
                 .uniqueResult();
     }
+
+    @Override
+    public OdooBillingPaymentStatus getLatestByBedId(Integer bedId) {
+        return (OdooBillingPaymentStatus) getSession()
+                .createCriteria(OdooBillingPaymentStatus.class)
+                .add(Restrictions.eq("bedId", bedId))
+                .add(Restrictions.eq("voided", (byte) 0))
+                .addOrder(Order.desc("id"))
+                .setMaxResults(1)
+                .uniqueResult();
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public List<OdooBillingPaymentStatus> getAllBedServiceRecords() {
+        return getSession()
+                .createCriteria(OdooBillingPaymentStatus.class)
+                .add(Restrictions.eq("serviceType", "BED"))
+                .add(Restrictions.eq("voided", (byte) 0))
+                .add(Restrictions.isNotNull("bedId"))
+                .addOrder(Order.asc("bedId"))
+                .addOrder(Order.desc("id"))
+                .list();
+    }
 }

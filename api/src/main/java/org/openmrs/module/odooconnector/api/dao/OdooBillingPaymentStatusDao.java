@@ -53,4 +53,19 @@ public interface OdooBillingPaymentStatusDao {
      * and must be allowed through as a new row.
      */
     OdooBillingPaymentStatus getLatestByServiceReferenceIdAndStatus(String serviceReferenceId, String paymentStatus);
+
+    /**
+     * Returns the most recent non-voided BED-service record for the given bed_id, or null if the
+     * bed has never been reserved. This is the bed-reservation "lock" check: a bed is currently
+     * reserved iff this row's payment_status is PENDING, PAID, or WAIVED (not CANCELLED).
+     */
+    OdooBillingPaymentStatus getLatestByBedId(Integer bedId);
+
+    /**
+     * Returns every non-voided BED-service record, ordered by (bedId, id desc) so that grouping
+     * by bedId and taking the first row per group yields the latest record per bed — used to
+     * compute ward/room-level "has an active reservation somewhere inside" indicators without a
+     * per-bed round trip.
+     */
+    List<OdooBillingPaymentStatus> getAllBedServiceRecords();
 }

@@ -30,8 +30,8 @@ import java.util.List;
  * <ul>
  *   <li>{@code *​/encounter/**}  — consultations and ward encounters</li>
  *   <li>{@code *​/order/**}      — lab orders and medication prescriptions</li>
- *   <li>{@code *​/bedassignment/**} — inpatient bed assignment</li>
- *   <li>{@code *​/bedmanagement/**} — bed management actions</li>
+ *   <li>{@code *​/beds/{bedId}}  — inpatient bed assignment (Admit and Transfer both POST here,
+ *       see {@code bedService.js}'s {@code assignBed})</li>
  * </ul>
  *
  * <p>The service type is inferred from the URL segment. patientId and visitId
@@ -60,8 +60,10 @@ public class BillingPaymentGateInterceptor extends HandlerInterceptorAdapter {
             new String[]{ "/bahmniencounter", "CONSULTATION" },
             new String[]{ "/order",        "LAB_ORDER" },
             new String[]{ "/drugorder",    "MEDICATION" },
-            new String[]{ "/bedassignment","BED" },
-            new String[]{ "/bedmanagement","BED" }
+            // bedService.js posts to /beds/{bedId} for both Admit's and Transfer's bed assignment —
+            // this is the real mutating endpoint; the previous "/bedassignment"/"/bedmanagement"
+            // patterns never matched any actual URL and were a no-op.
+            new String[]{ "/beds/",        "BED" }
     );
 
     @Override

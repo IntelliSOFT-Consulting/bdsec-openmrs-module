@@ -455,47 +455,19 @@ public class ConsultationFeeOdooService {
 
 	/**
 	 * Builds the exact JSON payload required by the Odoo /api/bdsec/sales endpoint.
-	 * Field names and casing must match Odoo's expected schema exactly.
-	 *   patient_unique_id — Bahmni patient identifier (e.g. ABC200023)
-	 *   patientUuid       — OpenMRS patient UUID
-	 *   shop_id           — Odoo POS shop; configurable via GP
-	 *   Payment_method    — payment method string (e.g. "free", "cash")
-	 *   Payment_type      — payment type string (e.g. "CBHI", "OOP")
-	 *   VisitUuid         — OpenMRS visit UUID
-	 *   lines             — always [{default_code: "consultation", quantity: 1}]
+	 * default_code is always "consultation" and quantity always 1 — this method is exclusively
+	 * for consultation billing. See {@link OdooSalesPayloadBuilder} for the shared shape used by
+	 * every other billable component (e.g. bed nights).
 	 */
 	private String buildSalesPayloadJson(
 	        String patientId, String patientUuid, String visitUuid, int shopId,
 	        String paymentMethod, String modeOfPayment,
 	        Object voided, String dateCreated, String dateChanged, String createdBy) {
 
-		String safePatientId     = patientId != null ? escapeJson(patientId) : "";
-		String safePatientUuid   = patientUuid != null ? escapeJson(patientUuid) : "";
-		String safeVisitUuid     = visitUuid != null ? escapeJson(visitUuid) : "";
-		String safePaymentMethod = paymentMethod != null ? escapeJson(paymentMethod) : "free";
-		String safeModeOfPayment = modeOfPayment != null ? escapeJson(modeOfPayment) : "";
-		String safeDateCreated   = dateCreated != null ? escapeJson(dateCreated) : "";
-		String safeDateChanged   = dateChanged != null ? escapeJson(dateChanged) : "";
-		String safeCreatedBy     = createdBy != null ? escapeJson(createdBy) : "";
-		String voidedVal         = (voided instanceof Boolean) ? voided.toString() : "false";
-
-		return "{"
-		        + "\"patient_unique_id\":\"" + safePatientId + "\","
-		        + "\"patientUuid\":\"" + safePatientUuid + "\","
-		        + "\"shop_id\":" + shopId + ","
-		        + "\"Payment_method\":\"" + safePaymentMethod + "\","
-		        + "\"Payment_type\":\"" + safeModeOfPayment + "\","
-		        + "\"VisitUuid\":\"" + safeVisitUuid + "\","
-		        + "\"voided\":" + voidedVal + ","
-		        + "\"dateCreated\":\"" + safeDateCreated + "\","
-		        + "\"dateChanged\":\"" + safeDateChanged + "\","
-		        + "\"createdBy\":\"" + safeCreatedBy + "\","
-		        + "\"lines\":[{\"default_code\":\"consultation\",\"quantity\":1}]"
-		        + "}";
-	}
-
-	/** Escapes backslashes and double-quotes so the value is safe inside a JSON string. */
-	private String escapeJson(String value) {
-		return value.replace("\\", "\\\\").replace("\"", "\\\"");
+		return OdooSalesPayloadBuilder.buildSalesPayloadJson(
+		        patientId, patientUuid, visitUuid, shopId,
+		        paymentMethod, modeOfPayment,
+		        voided, dateCreated, dateChanged, createdBy,
+		        "consultation", 1);
 	}
 }

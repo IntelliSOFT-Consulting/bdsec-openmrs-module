@@ -127,4 +127,48 @@
         </sql>
     </changeSet>
 
+    <changeSet id="odooconnector-2026-06-22-1003" author="bdsec">
+        <preConditions onFail="MARK_RAN">
+            <and>
+                <tableExists tableName="odoo_billing_payment_status"/>
+                <not><columnExists tableName="odoo_billing_payment_status" columnName="bed_id"/></not>
+            </and>
+        </preConditions>
+        <comment>
+            Add bed_id/bed_number so the BED service_type rows (bed reservation quotations) can be
+            looked up per physical bed — reuses this table rather than adding a dedicated
+            reservation table. Both columns stay NULL for every non-BED service_type row.
+        </comment>
+        <sql>
+            ALTER TABLE odoo_billing_payment_status
+                ADD COLUMN bed_id INT NULL,
+                ADD COLUMN bed_number VARCHAR(50) NULL;
+        </sql>
+        <sql>
+            CREATE INDEX idx_obps_bed_id ON odoo_billing_payment_status (bed_id);
+        </sql>
+    </changeSet>
+
+    <changeSet id="odooconnector-2026-06-22-1004" author="bdsec">
+        <preConditions onFail="MARK_RAN">
+            <and>
+                <tableExists tableName="odoo_billing_payment_status"/>
+                <not><columnExists tableName="odoo_billing_payment_status" columnName="ward_uuid"/></not>
+            </and>
+        </preConditions>
+        <comment>
+            Add ward_uuid/room_name (only meaningful for BED service_type rows) so the ward-level
+            and room-level reservation indicators can be computed without a separate table or a
+            cross-module join into bedmanagement's own location tables.
+        </comment>
+        <sql>
+            ALTER TABLE odoo_billing_payment_status
+                ADD COLUMN ward_uuid CHAR(38) NULL,
+                ADD COLUMN room_name VARCHAR(100) NULL;
+        </sql>
+        <sql>
+            CREATE INDEX idx_obps_ward_uuid ON odoo_billing_payment_status (ward_uuid);
+        </sql>
+    </changeSet>
+
 </databaseChangeLog>
