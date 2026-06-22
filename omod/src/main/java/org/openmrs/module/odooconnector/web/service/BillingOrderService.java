@@ -74,6 +74,15 @@ public class BillingOrderService {
     // Main processing
     // -------------------------------------------------------------------------
 
+    /**
+     * Same processing as below, for callers with no HttpServletResponse to set a status code on
+     * — e.g. an internal replication call made right after the Bahmni-&gt;Odoo consultation sale
+     * order succeeds, rather than an inbound HTTP request pushed from Odoo itself.
+     */
+    public SimpleObject processBillingOrder(Map<String, Object> body) {
+        return processBillingOrder(body, null);
+    }
+
     public SimpleObject processBillingOrder(Map<String, Object> body, HttpServletResponse httpResponse) {
 
         // --- Required field extraction ---
@@ -84,7 +93,7 @@ public class BillingOrderService {
         if (saleIdObj == null || patientUuid == null || visitUuid == null
                 || patientUuid.isEmpty() || visitUuid.isEmpty()) {
             log.warn("[BillingOrder] Rejected — sale_id, patient_uuid, and visit_uuid are all required");
-            httpResponse.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+            setBadRequest(httpResponse);
             return errorResponse("sale_id, patient_uuid, and visit_uuid are required");
         }
 
@@ -133,17 +142,17 @@ public class BillingOrderService {
 
         if (patient == null) {
             log.warn("[BillingOrder] Patient not found — uuid=" + patientUuid);
-            httpResponse.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+            setBadRequest(httpResponse);
             return errorResponse("Patient not found for patient_uuid=" + patientUuid);
         }
         if (visit == null) {
             log.warn("[BillingOrder] Visit not found — uuid=" + visitUuid);
-            httpResponse.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+            setBadRequest(httpResponse);
             return errorResponse("Visit not found for visit_uuid=" + visitUuid);
         }
         if (resolvedIdentifier == null) {
             log.warn("[BillingOrder] Patient has no identifier — uuid=" + patientUuid);
-            httpResponse.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+            setBadRequest(httpResponse);
             return errorResponse("Patient " + patientUuid + " has no identifier — cannot process billing order");
         }
 
@@ -240,6 +249,12 @@ public class BillingOrderService {
         r.put("status", "error");
         r.put("message", message);
         return r;
+    }
+
+    private void setBadRequest(HttpServletResponse httpResponse) {
+        if (httpResponse != null) {
+            httpResponse.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+        }
     }
 
     private String gp(String property) {

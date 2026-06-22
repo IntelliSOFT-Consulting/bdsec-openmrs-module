@@ -12,6 +12,13 @@ import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseBody;
 
+/**
+ * REST endpoint: GET /openmrs/ws/rest/v1/odooconnector/stock?drugUuid=<uuid>
+ *
+ * Returns the exact available stock quantity for a drug, sourced from Odoo's
+ * /api/bdsec/available-quantity/{drugUuid}. The OpenMRS drug UUID is passed straight through —
+ * Odoo's product master data is mapped 1:1 to it via product_uuid.
+ */
 @Controller
 @RequestMapping("/rest/v1/odooconnector/stock")
 public class StockController {
@@ -22,29 +29,30 @@ public class StockController {
     private OdooStockService odooStockService;
 
     @RequestMapping(method = RequestMethod.GET)
-    public @ResponseBody SimpleObject getStock(
-            @RequestParam(value = "drugName", required = false, defaultValue = "") String drugName,
-            @RequestParam(value = "drugCode", required = false, defaultValue = "") String drugCode) {
-
-        log.info("=== STOCK REQUEST === drugName=" + drugName + " drugCode=" + drugCode);
-        System.out.println("=== STOCK REQUEST === drugName=" + drugName + " drugCode=" + drugCode);
+    public @ResponseBody SimpleObject getStock(@RequestParam(value = "drugUuid") String drugUuid) {
 
         StockInfo info;
         try {
-            info = odooStockService.getStock(drugName, drugCode);
-        } catch (Exception e) {
-            log.warn("Stock lookup failed, returning UNAVAILABLE: " + e.getMessage());
-            info = new StockInfo(StockInfo.StockStatus.UNAVAILABLE, false);
+            info = odooStockService.getAvailableQuantity(drugUuid);
+        }
+        catch (Exception e) {
+            log.warn("[DrugAvailability] Lookup failed for drugUuid=" + drugUuid + " — " + e.getMessage());
+            info = StockInfo.notFound();
         }
 
         SimpleObject result = new SimpleObject();
-        result.put("drugName", info.getDrugName());
-        result.put("drugCode", info.getDrugCode());
-        result.put("quantity", info.getQuantity());
-        result.put("unit", info.getUnit());
-        result.put("low_stock_threshold", info.getLowStockThreshold());
-        result.put("status", info.getStatus() != null ? info.getStatus().name() : "UNAVAILABLE");
-        result.put("available", info.isAvailable());
+        if (info.getError() != null) {
+            result.put("available", info.isAvailable());
+            result.put("quantityAvailable", info.getQuantityAvailable());
+            result.put("error", info.getError());
+        }
+        else {
+            result.put("drugUuid", info.getDrugUuid());
+            result.put("drugName", info.getDrugName());
+            result.put("available", info.isAvailable());
+            result.put("quantityAvailable", info.getQuantityAvailable());
+            result.put("unit", info.getUnit());
+        }
         return result;
     }
 }
