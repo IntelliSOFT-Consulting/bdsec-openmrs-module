@@ -179,6 +179,26 @@ public class BillingOrderService {
         Date        paymentDate   = parseDate((String) body.get("payment_date"));
         Date        syncTs        = new Date();
 
+        // --- Only meaningful for service_type BED (bed reservation tracking reuses this table —
+        // see OdooBillingPaymentStatusService.getLatestByBedId). Odoo's own payment-status push
+        // (this endpoint) has no notion of bed_id — it only knows sale_id — so when it's absent
+        // here, inherit it from the original "Submit Quotation" row for the same sale_id, so a
+        // PENDING -> PAID transition keeps the ward bed grid's reservation badge in sync. ---
+        Integer     bedId         = toInteger(body.get("bed_id"));
+        String      bedNumber     = (String) body.get("bed_number");
+        String      wardUuid      = (String) body.get("ward_uuid");
+        String      roomName      = (String) body.get("room_name");
+        if (bedId == null) {
+            OdooBillingPaymentStatus original =
+                    Context.getService(OdooBillingPaymentStatusService.class).getFirstByServiceReferenceId(saleIdStr);
+            if (original != null && original.getBedId() != null) {
+                bedId = original.getBedId();
+                bedNumber = original.getBedNumber();
+                wardUuid = original.getWardUuid();
+                roomName = original.getRoomName();
+            }
+        }
+
         log.info("[BillingOrder] Mapped — patientId=" + resolvedIdentifier
                 + " visitId=" + visit.getId()
                 + " paymentStatus=" + paymentStatus
@@ -215,6 +235,10 @@ public class BillingOrderService {
             dto.setCurrency(currency);
             dto.setPaymentDate(paymentDate);
             dto.setOdooSyncTimestamp(syncTs);
+            dto.setBedId(bedId);
+            dto.setBedNumber(bedNumber);
+            dto.setWardUuid(wardUuid);
+            dto.setRoomName(roomName);
 
             OdooBillingPaymentStatus saved = svc.saveOrUpdatePaymentStatus(dto);
             log.info("[BillingOrder] Saved record — id=" + saved.getId()
@@ -271,6 +295,15 @@ public class BillingOrderService {
         if (value instanceof Number) { return new BigDecimal(value.toString()); }
         try { return new BigDecimal(value.toString()); }
         catch (NumberFormatException e) { return BigDecimal.ZERO; }
+    }
+
+    private Integer toInteger(Object value) {
+        if (value instanceof Number) { return ((Number) value).intValue(); }
+        if (value instanceof String && !((String) value).isEmpty()) {
+            try { return Integer.parseInt((String) value); }
+            catch (NumberFormatException ignored) {}
+        }
+        return null;
     }
 
     private Date parseDate(String dateStr) {

@@ -34,7 +34,19 @@ public class OdooBillingPaymentStatusDTO {
 	private String serviceReferenceId;
 	
 	private String odooInvoiceId;
-	
+
+	/** Only set when serviceType is "BED" — the bedmanagement module's bed_id. */
+	private Integer bedId;
+
+	/** Only set when serviceType is "BED" — e.g. "IPD-0001". */
+	private String bedNumber;
+
+	/** Only set when serviceType is "BED" — the bedmanagement ward's location UUID. */
+	private String wardUuid;
+
+	/** Only set when serviceType is "BED" — the room name within the ward (e.g. "IPD Ward I"). */
+	private String roomName;
+
 	private String paymentStatus;
 	
 	private BigDecimal amountDue;
@@ -96,7 +108,39 @@ public class OdooBillingPaymentStatusDTO {
 	public void setOdooInvoiceId(String odooInvoiceId) {
 		this.odooInvoiceId = odooInvoiceId;
 	}
-	
+
+	public Integer getBedId() {
+		return bedId;
+	}
+
+	public void setBedId(Integer bedId) {
+		this.bedId = bedId;
+	}
+
+	public String getBedNumber() {
+		return bedNumber;
+	}
+
+	public void setBedNumber(String bedNumber) {
+		this.bedNumber = bedNumber;
+	}
+
+	public String getWardUuid() {
+		return wardUuid;
+	}
+
+	public void setWardUuid(String wardUuid) {
+		this.wardUuid = wardUuid;
+	}
+
+	public String getRoomName() {
+		return roomName;
+	}
+
+	public void setRoomName(String roomName) {
+		this.roomName = roomName;
+	}
+
 	public String getPaymentStatus() {
 		return paymentStatus;
 	}

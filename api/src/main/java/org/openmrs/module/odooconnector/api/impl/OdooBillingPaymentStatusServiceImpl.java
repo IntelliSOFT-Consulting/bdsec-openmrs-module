@@ -56,6 +56,10 @@ public class OdooBillingPaymentStatusServiceImpl
         record.setServiceType(dto.getServiceType());
         record.setServiceReferenceId(dto.getServiceReferenceId());
         record.setOdooInvoiceId(dto.getOdooInvoiceId());
+        record.setBedId(dto.getBedId());
+        record.setBedNumber(dto.getBedNumber());
+        record.setWardUuid(dto.getWardUuid());
+        record.setRoomName(dto.getRoomName());
         record.setPaymentStatus(dto.getPaymentStatus() != null ? dto.getPaymentStatus() : "PENDING");
         record.setAmountDue(dto.getAmountDue());
         record.setAmountPaid(dto.getAmountPaid());
@@ -116,6 +120,16 @@ public class OdooBillingPaymentStatusServiceImpl
     public OdooBillingPaymentStatus getLatestByServiceReferenceIdAndStatus(String serviceReferenceId, String paymentStatus)
             throws APIException {
         return dao.getLatestByServiceReferenceIdAndStatus(serviceReferenceId, paymentStatus);
+    }
+
+    @Override
+    public OdooBillingPaymentStatus getLatestByBedId(Integer bedId) throws APIException {
+        return dao.getLatestByBedId(bedId);
+    }
+
+    @Override
+    public List<OdooBillingPaymentStatus> getAllBedServiceRecords() throws APIException {
+        return dao.getAllBedServiceRecords();
     }
 
     @Override

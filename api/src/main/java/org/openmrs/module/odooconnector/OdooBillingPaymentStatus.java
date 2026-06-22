@@ -59,6 +59,22 @@ public class OdooBillingPaymentStatus extends BaseOpenmrsObject {
     @Column(name = "odoo_invoice_id", length = 255)
     private String odooInvoiceId;
 
+    /** Only populated when serviceType is "BED" — the bedmanagement module's bed_id. */
+    @Column(name = "bed_id")
+    private Integer bedId;
+
+    /** Only populated when serviceType is "BED" — e.g. "IPD-0001", denormalized for display. */
+    @Column(name = "bed_number", length = 50)
+    private String bedNumber;
+
+    /** Only populated when serviceType is "BED" — the bedmanagement ward's location UUID. */
+    @Column(name = "ward_uuid", length = 38)
+    private String wardUuid;
+
+    /** Only populated when serviceType is "BED" — the room name within the ward (e.g. "IPD Ward I"). */
+    @Column(name = "room_name", length = 100)
+    private String roomName;
+
     @Column(name = "payment_status", nullable = false, length = 50)
     private String paymentStatus = "PENDING";
 
@@ -168,6 +184,38 @@ public class OdooBillingPaymentStatus extends BaseOpenmrsObject {
 
     public void setOdooInvoiceId(String odooInvoiceId) {
         this.odooInvoiceId = odooInvoiceId;
+    }
+
+    public Integer getBedId() {
+        return bedId;
+    }
+
+    public void setBedId(Integer bedId) {
+        this.bedId = bedId;
+    }
+
+    public String getBedNumber() {
+        return bedNumber;
+    }
+
+    public void setBedNumber(String bedNumber) {
+        this.bedNumber = bedNumber;
+    }
+
+    public String getWardUuid() {
+        return wardUuid;
+    }
+
+    public void setWardUuid(String wardUuid) {
+        this.wardUuid = wardUuid;
+    }
+
+    public String getRoomName() {
+        return roomName;
+    }
+
+    public void setRoomName(String roomName) {
+        this.roomName = roomName;
     }
 
     public String getPaymentStatus() {
