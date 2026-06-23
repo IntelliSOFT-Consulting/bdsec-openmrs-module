@@ -108,4 +108,13 @@ public interface OdooBillingPaymentStatusService extends OpenmrsService {
      */
     @Transactional(readOnly = true)
     List<OdooBillingPaymentStatus> getAllBedServiceRecords() throws APIException;
+
+    /**
+     * Returns the most recent non-voided BED-service record for the given patientId, across all
+     * beds, or null if the patient has never had one. Used to detect a clinician selecting a
+     * different bed for a patient who already has an active (and possibly already-paid)
+     * reservation elsewhere.
+     */
+    @Transactional(readOnly = true)
+    OdooBillingPaymentStatus getLatestBedReservationForPatient(String patientId) throws APIException;
 }

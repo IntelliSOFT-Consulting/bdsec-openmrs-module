@@ -534,6 +534,36 @@ public class BedOrderOdooService {
 		return reservations;
 	}
 
+	/**
+	 * Returns the bed (if any) the given patient currently holds an active (PENDING/PAID/WAIVED)
+	 * reservation for, regardless of ward or which visit raised it. Used to detect a clinician
+	 * selecting a different bed for a patient who already paid for a specific one — see
+	 * {@code BED_PAID_MISMATCH} handling on the frontend.
+	 */
+	public SimpleObject getActivePatientBedReservation(String patientId) {
+		SimpleObject result = new SimpleObject();
+		if (patientId == null || patientId.isEmpty()) {
+			result.put("found", false);
+			return result;
+		}
+
+		OdooBillingPaymentStatus existing = Context.getService(OdooBillingPaymentStatusService.class)
+		        .getLatestBedReservationForPatient(patientId);
+
+		if (existing == null || !ACTIVE_RESERVATION_STATUSES.contains(existing.getPaymentStatus())) {
+			result.put("found", false);
+			return result;
+		}
+
+		result.put("found", true);
+		result.put("bedId", existing.getBedId());
+		result.put("bedNumber", existing.getBedNumber());
+		result.put("wardUuid", existing.getWardUuid());
+		result.put("roomName", existing.getRoomName());
+		result.put("paymentStatus", existing.getPaymentStatus());
+		return result;
+	}
+
 	private String resolvePatientName(String patientIdentifier) {
 		if (patientIdentifier == null) {
 			return null;

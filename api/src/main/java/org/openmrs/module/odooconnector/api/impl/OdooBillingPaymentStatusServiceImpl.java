@@ -11,7 +11,10 @@ package org.openmrs.module.odooconnector.api.impl;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.openmrs.Patient;
+import org.openmrs.Visit;
 import org.openmrs.api.APIException;
+import org.openmrs.api.context.Context;
 import org.openmrs.api.impl.BaseOpenmrsService;
 import org.openmrs.module.odooconnector.OdooBillingPaymentStatus;
 import org.openmrs.module.odooconnector.OdooBillingPaymentStatusDTO;
@@ -20,7 +23,9 @@ import org.openmrs.module.odooconnector.api.dao.OdooBillingPaymentStatusDao;
 
 import java.util.Arrays;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 public class OdooBillingPaymentStatusServiceImpl
@@ -83,7 +88,11 @@ public class OdooBillingPaymentStatusServiceImpl
     @Override
     public OdooBillingPaymentStatus getPaymentStatus(String patientId, Integer visitId, String serviceType)
             throws APIException {
-        return dao.getByPatientVisitService(patientId, visitId, serviceType);
+        OdooBillingPaymentStatus record = dao.getByPatientVisitService(patientId, visitId, serviceType);
+        if (record != null) {
+            return record;
+        }
+        return getPaymentStatusFromLinkedPriorVisit(patientId, visitId, serviceType);
     }
 
     @Override
@@ -92,7 +101,7 @@ public class OdooBillingPaymentStatusServiceImpl
                 + " visit=" + visitId
                 + " service=" + serviceType);
 
-        OdooBillingPaymentStatus record = dao.getByPatientVisitService(patientId, visitId, serviceType);
+        OdooBillingPaymentStatus record = getPaymentStatus(patientId, visitId, serviceType);
 
         boolean paid = record != null && PAID_STATUSES.contains(record.getPaymentStatus());
 
@@ -103,6 +112,76 @@ public class OdooBillingPaymentStatusServiceImpl
                 + (record != null ? " status=" + record.getPaymentStatus() : " (no record)"));
 
         return paid;
+    }
+
+    /**
+     * A visit-type switch during one continuous admission (e.g. OPD -&gt; IPD, via Bahmni's
+     * "close current visit and start a new one") closes the active visit and immediately opens a
+     * new one for the same patient — the new visit's start time equals the old visit's stop time.
+     * From a billing standpoint that's the same episode, not a new one: a service already paid
+     * under the closed visit must still count as paid on the new visit, otherwise every payment
+     * gate (dashboard access, admit button, duplicate-charge check) incorrectly re-blocks a patient
+     * who already paid, the moment their visit type changes.
+     *
+     * Walks back through any chain of such immediately-consecutive visits (capped to avoid
+     * pathological loops) looking for a non-voided record of the given service type.
+     */
+    private OdooBillingPaymentStatus getPaymentStatusFromLinkedPriorVisit(String patientId, Integer visitId,
+            String serviceType) {
+        Visit visit = Context.getVisitService().getVisit(visitId);
+        if (visit == null || visit.getPatient() == null || visit.getStartDatetime() == null) {
+            return null;
+        }
+
+        Set<Integer> visited = new HashSet<>();
+        visited.add(visitId);
+        Patient patient = visit.getPatient();
+        Date boundary = visit.getStartDatetime();
+
+        for (int hop = 0; hop < 10; hop++) {
+            Visit priorVisit = findVisitEndingAt(patient, boundary, visited);
+            if (priorVisit == null) {
+                return null;
+            }
+            visited.add(priorVisit.getVisitId());
+
+            OdooBillingPaymentStatus record =
+                    dao.getByPatientVisitService(patientId, priorVisit.getVisitId(), serviceType);
+            if (record != null) {
+                log.info("[OdooBilling] Resolved " + serviceType + " record via linked prior visit="
+                        + priorVisit.getVisitId() + " (visit-type switch chain) for current visit=" + visitId
+                        + " patient=" + patientId);
+                return record;
+            }
+            if (priorVisit.getStartDatetime() == null) {
+                return null;
+            }
+            boundary = priorVisit.getStartDatetime();
+        }
+        return null;
+    }
+
+    /**
+     * Finds the patient's visit whose stop time is (within a small tolerance of) the given
+     * boundary instant — i.e. the visit that was closed at the exact moment the next one in the
+     * chain was opened. Excludes visit ids already walked, to bound the search to a strictly
+     * backward-moving chain.
+     */
+    private Visit findVisitEndingAt(Patient patient, Date boundary, Set<Integer> exclude) {
+        List<Visit> visits = Context.getVisitService().getVisitsByPatient(patient);
+        Visit best = null;
+        long bestDiff = Long.MAX_VALUE;
+        for (Visit v : visits) {
+            if (exclude.contains(v.getVisitId()) || v.getStopDatetime() == null) {
+                continue;
+            }
+            long diff = Math.abs(v.getStopDatetime().getTime() - boundary.getTime());
+            if (diff <= 5000 && diff < bestDiff) {
+                best = v;
+                bestDiff = diff;
+            }
+        }
+        return best;
     }
 
     @Override
@@ -130,6 +209,11 @@ public class OdooBillingPaymentStatusServiceImpl
     @Override
     public List<OdooBillingPaymentStatus> getAllBedServiceRecords() throws APIException {
         return dao.getAllBedServiceRecords();
+    }
+
+    @Override
+    public OdooBillingPaymentStatus getLatestBedReservationForPatient(String patientId) throws APIException {
+        return dao.getLatestBedReservationForPatient(patientId);
     }
 
     @Override

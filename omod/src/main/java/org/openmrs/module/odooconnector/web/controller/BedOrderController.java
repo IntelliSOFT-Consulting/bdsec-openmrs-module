@@ -95,6 +95,12 @@ public class BedOrderController {
 		return bedOrderOdooService.getActiveReservationLocations(patientId);
 	}
 
+	@RequestMapping(value = "/reservations/patient-active", method = RequestMethod.GET)
+	public @ResponseBody SimpleObject getActivePatientBedReservation(
+	        @RequestParam(value = "patientId", required = false) String patientId) {
+		return bedOrderOdooService.getActivePatientBedReservation(patientId);
+	}
+
 	@RequestMapping(value = "/reservations", method = RequestMethod.GET)
 	public @ResponseBody SimpleObject getReservations(@RequestParam("bedIds") String bedIdsCsv) {
 		List<Integer> bedIds = new ArrayList<>();

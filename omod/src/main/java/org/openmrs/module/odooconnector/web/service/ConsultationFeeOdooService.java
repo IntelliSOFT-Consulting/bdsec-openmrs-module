@@ -8,6 +8,9 @@ import okhttp3.Response;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.openmrs.api.context.Context;
+import org.openmrs.module.odooconnector.OdooBillingPaymentStatus;
+import org.openmrs.module.odooconnector.api.OdooBillingPaymentStatusService;
+import org.openmrs.module.odooconnector.web.PatientVisitResolver;
 import org.openmrs.module.webservices.rest.SimpleObject;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -203,6 +206,11 @@ public class ConsultationFeeOdooService {
 	        String paymentMethod, String modeOfPayment,
 	        Object voided, String dateCreated, String dateChanged, String createdBy) {
 
+		SimpleObject alreadyCharged = blockIfAlreadyChargedForVisit(patientId, patientUuid, visitUuid);
+		if (alreadyCharged != null) {
+			return alreadyCharged;
+		}
+
 		String odooEndpoint = getOdooBaseUrl() + getConsultationOdooPath();
 		int shopId = getShopId();
 
@@ -265,6 +273,50 @@ public class ConsultationFeeOdooService {
 		result.put("patientUuid", patientUuid);
 		result.put("VisitUuid", visitUuid);
 		return result;
+	}
+
+	/**
+	 * Consultation is charged once per visit, not once per day — a visit that stays open across
+	 * multiple days (e.g. an admitted patient) must not accumulate a new charge each time this
+	 * endpoint is called for it. Returns a blocked response (and skips Odoo entirely) when a
+	 * non-voided CONSULTATION record already exists for this patient/visit, regardless of its
+	 * payment_status (PENDING already counts as "charged" — only a CANCELLED/voided record, which
+	 * consultation fees never produce today, would not). Returns null when it's safe to proceed.
+	 *
+	 * Same accepted trade-off as the bed-reservation check-then-insert (see BedOrderOdooService):
+	 * this table is append-only with no DB-level unique constraint, so there is a narrow,
+	 * human-paced race window between this check and the row eventually being inserted.
+	 */
+	private SimpleObject blockIfAlreadyChargedForVisit(String patientId, String patientUuid, String visitUuid) {
+		String resolvedPatientId = PatientVisitResolver.resolvePatientIdentifier(patientId, patientUuid);
+		Integer resolvedVisitId = PatientVisitResolver.resolveVisitId(null, visitUuid);
+
+		if (resolvedPatientId == null || resolvedVisitId == null) {
+			log.warn("[ConsultationFee] Could not resolve patient/visit for duplicate-charge check"
+			        + " — patientId=" + patientId + " patientUuid=" + patientUuid + " visitUuid=" + visitUuid
+			        + " — proceeding without the check");
+			return null;
+		}
+
+		OdooBillingPaymentStatus existing = Context.getService(OdooBillingPaymentStatusService.class)
+		        .getPaymentStatus(resolvedPatientId, resolvedVisitId, "CONSULTATION");
+
+		if (existing == null) {
+			return null;
+		}
+
+		log.info("[ConsultationFee] Blocked duplicate charge — a CONSULTATION record already exists for"
+		        + " patientId=" + resolvedPatientId + " visitId=" + resolvedVisitId
+		        + " (existing id=" + existing.getId() + " status=" + existing.getPaymentStatus() + ")");
+
+		SimpleObject blocked = new SimpleObject();
+		blocked.put("status", "blocked");
+		blocked.put("errorType", "consultation_already_charged");
+		blocked.put("message", "Consultation fee for the current visit has already been paid.");
+		blocked.put("patientUuid", patientUuid);
+		blocked.put("VisitUuid", visitUuid);
+		blocked.put("existingPaymentStatus", existing.getPaymentStatus());
+		return blocked;
 	}
 
 	/**
