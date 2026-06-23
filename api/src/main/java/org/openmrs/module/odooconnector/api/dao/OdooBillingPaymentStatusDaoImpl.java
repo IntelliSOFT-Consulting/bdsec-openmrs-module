@@ -130,4 +130,16 @@ public class OdooBillingPaymentStatusDaoImpl implements OdooBillingPaymentStatus
                 .addOrder(Order.desc("id"))
                 .list();
     }
+
+    @Override
+    public OdooBillingPaymentStatus getLatestBedReservationForPatient(String patientId) {
+        return (OdooBillingPaymentStatus) getSession()
+                .createCriteria(OdooBillingPaymentStatus.class)
+                .add(Restrictions.eq("patientId", patientId))
+                .add(Restrictions.eq("serviceType", "BED"))
+                .add(Restrictions.eq("voided", (byte) 0))
+                .addOrder(Order.desc("id"))
+                .setMaxResults(1)
+                .uniqueResult();
+    }
 }

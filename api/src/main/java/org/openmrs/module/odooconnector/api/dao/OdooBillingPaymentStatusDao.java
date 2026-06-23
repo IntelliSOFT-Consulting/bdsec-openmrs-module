@@ -68,4 +68,13 @@ public interface OdooBillingPaymentStatusDao {
      * per-bed round trip.
      */
     List<OdooBillingPaymentStatus> getAllBedServiceRecords();
+
+    /**
+     * Returns the most recent non-voided BED-service record for the given patientId, across all
+     * beds — i.e. "what bed (if any) does this patient currently hold an active reservation for",
+     * regardless of which ward/visit it was raised in. Null if the patient has never had a BED
+     * record. Used to detect a clinician selecting a different bed for a patient who already paid
+     * for a specific one.
+     */
+    OdooBillingPaymentStatus getLatestBedReservationForPatient(String patientId);
 }
